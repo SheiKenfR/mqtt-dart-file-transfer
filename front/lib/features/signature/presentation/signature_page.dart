@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:signature/signature.dart';
 
+import '../../../core/mqtt/mqtt_image_transfer_service.dart';
 import '../application/signature_controller.dart';
 import 'signature_pad.dart';
 
 class SignaturePage extends StatefulWidget {
-  const SignaturePage({super.key});
+  const SignaturePage({super.key, this.mqttTransferService});
+
+  final MqttImageTransferService? mqttTransferService;
 
   @override
   State<SignaturePage> createState() => _SignaturePageState();
@@ -17,8 +20,10 @@ class _SignaturePageState extends State<SignaturePage> {
     penColor: Colors.black,
   );
 
-  final SignatureFeatureController _featureController =
-      SignatureFeatureController();
+  late final SignatureFeatureController _featureController =
+      SignatureFeatureController(
+    mqttTransferService: widget.mqttTransferService,
+  );
 
   bool _hasDrawn = false;
   bool _isProcessing = false;
