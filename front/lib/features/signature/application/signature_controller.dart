@@ -2,10 +2,13 @@ import 'dart:developer' as dev;
 
 import 'package:signature/signature.dart';
 
+import '../../../core/mqtt/image_transfer_result.dart';
 import '../../../core/mqtt/mqtt_image_transfer_service.dart';
 import '../domain/signature_export_result.dart';
 import '../infrastructure/signature_image_processor.dart';
 import '../infrastructure/signature_storage_service.dart';
+
+typedef ExportResult = ({String filePath, ImageTransferResult? transferResult});
 
 class SignatureFeatureController {
   final SignatureImageProcessor _imageProcessor;
@@ -46,28 +49,31 @@ class SignatureFeatureController {
     );
   }
 
-  Future<String> exportAndSave(
+  Future<ExportResult> exportAndSave(
     SignatureController signatureController,
   ) async {
     final result = await exportSignature(signatureController);
     final file = await _storageService.saveLocally(result);
+    final transferResult = await _publishToMqtt(result);
 
-    _publishToMqtt(result);
-
-    return file.path;
+    return (filePath: file.path, transferResult: transferResult);
   }
 
-  void _publishToMqtt(SignatureExportResult result) {
-    if (_mqttTransferService == null) return;
+  Future<ImageTransferResult?> _publishToMqtt(
+    SignatureExportResult result,
+  ) async {
+    if (_mqttTransferService == null) return null;
 
     try {
-      final imageId = _mqttTransferService.sendPng(
+      final transferResult = await _mqttTransferService.sendPng(
         targetDeviceId: _targetDeviceId,
         pngBytes: result.bytes,
       );
-      dev.log('Signature published to MQTT: $imageId');
+      dev.log('MQTT transfer ${transferResult.status.name}: ${transferResult.imageId}');
+      return transferResult;
     } catch (e) {
       dev.log('MQTT publish failed: $e');
+      return null;
     }
   }
 }

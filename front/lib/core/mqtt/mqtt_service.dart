@@ -100,6 +100,10 @@ class MqttService {
     return _client.publishMessage(topic, qos, builder.payload!, retain: retain);
   }
 
+  void unsubscribe(String topic) {
+    _client.unsubscribe(topic);
+  }
+
   void disconnect() {
     _client.disconnect();
   }
