@@ -1,0 +1,25 @@
+name: poc_sign
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  signature: ^6.0.0
+  image: ^4.0.0
+  path_provider: ^2.0.0
+  mqtt_client: ^10.11.11
+  crypto: ^3.0.7
+  typed_data: ^1.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
