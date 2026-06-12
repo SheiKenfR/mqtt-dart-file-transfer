@@ -1,0 +1,251 @@
+[
+    {
+        "id": "flow_signature_receiver",
+        "type": "tab",
+        "label": "Signature Receiver",
+        "disabled": false,
+        "info": "Receives PNG signatures from Flutter via MQTT, validates integrity, writes to /signatures/ and publishes ACK or error."
+    },
+    {
+        "id": "mqtt_broker_mosquitto",
+        "type": "mqtt-broker",
+        "name": "Mosquitto",
+        "broker": "mosquitto",
+        "port": "1883",
+        "clientid": "nodered-signature-receiver",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "closeTopic": "",
+        "willTopic": "",
+        "willPayload": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "mqtt_in_meta",
+        "type": "mqtt in",
+        "z": "flow_signature_receiver",
+        "name": "Subscribe meta",
+        "topic": "educacode/v1/devices/+/images/+/meta",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "mqtt_broker_mosquitto",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 130,
+        "y": 100,
+        "wires": [
+            ["fn_store_meta"]
+        ]
+    },
+    {
+        "id": "fn_store_meta",
+        "type": "function",
+        "z": "flow_signature_receiver",
+        "name": "Store meta",
+        "func": "const parts = msg.topic.split('/');\nconst deviceId = parts[3];\nconst imageIdFromTopic = parts[5];\n\nconst meta = msg.payload;\n\nif (!meta || typeof meta !== 'object') {\n    node.warn('invalid meta payload');\n    return null;\n}\n\nif (!meta.imageId || meta.imageId !== imageIdFromTopic) {\n    node.warn('meta imageId mismatch');\n    return null;\n}\n\nconst metaKey = `meta_${deviceId}_${imageIdFromTopic}`;\n\nflow.set(metaKey, meta);\n\nsetTimeout(() => {\n    flow.set(metaKey, undefined);\n}, 60000);\n\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 350,
+        "y": 100,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "mqtt_in_data",
+        "type": "mqtt in",
+        "z": "flow_signature_receiver",
+        "name": "Subscribe data",
+        "topic": "educacode/v1/devices/+/images/+/data",
+        "qos": "1",
+        "datatype": "buffer",
+        "broker": "mqtt_broker_mosquitto",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 130,
+        "y": 240,
+        "wires": [
+            ["fn_validate"]
+        ]
+    },
+    {
+        "id": "fn_validate",
+        "type": "function",
+        "z": "flow_signature_receiver",
+        "name": "Validate + prepare",
+        "func": "const parts = msg.topic.split('/');\nconst deviceId = parts[3];\nconst imageId = parts[5];\nconst buffer = msg.payload;\n\nconst metaKey = `meta_${deviceId}_${imageId}`;\nconst completedKey = `completed_${deviceId}_${imageId}`;\n\nfunction buildError(reason) {\n    return {\n        topic: `educacode/v1/devices/${deviceId}/images/${imageId}/error`,\n        payload: JSON.stringify({ imageId, status: 'error', reason })\n    };\n}\n\nfunction validateMeta(meta) {\n    if (!meta) return 'meta_not_found';\n    if (meta.imageId !== imageId) return 'image_id_mismatch';\n    if (meta.mimeType !== 'image/png') return 'invalid_mime_type';\n    if (meta.transferMode !== 'single') return 'invalid_transfer_mode';\n    if (meta.encoding !== 'binary') return 'invalid_encoding';\n    if (!Number.isInteger(meta.size)) return 'invalid_size';\n    if (meta.size <= 0) return 'invalid_size';\n    if (meta.size > 128 * 1024) return 'image_too_large';\n    if (typeof meta.sha256 !== 'string') return 'invalid_sha256';\n    if (!/^[a-f0-9]{64}$/i.test(meta.sha256)) return 'invalid_sha256';\n    return null;\n}\n\nfunction validateAndPrepare(meta) {\n    if (flow.get(completedKey)) {\n        return null;\n    }\n\n    if (!Buffer.isBuffer(buffer)) {\n        const err = buildError('payload_not_buffer');\n        msg.errorTopic = err.topic;\n        msg.errorPayload = err.payload;\n        return [null, msg];\n    }\n\n    const metaError = validateMeta(meta);\n    if (metaError) {\n        flow.set(metaKey, undefined);\n        const err = buildError(metaError);\n        msg.errorTopic = err.topic;\n        msg.errorPayload = err.payload;\n        return [null, msg];\n    }\n\n    if (buffer.length !== meta.size) {\n        flow.set(metaKey, undefined);\n        const err = buildError('size_mismatch');\n        msg.errorTopic = err.topic;\n        msg.errorPayload = err.payload;\n        return [null, msg];\n    }\n\n    const crypto = require('crypto');\n    const hash = crypto.createHash('sha256').update(buffer).digest('hex');\n\n    if (hash !== meta.sha256) {\n        flow.set(metaKey, undefined);\n        const err = buildError('checksum_mismatch');\n        msg.errorTopic = err.topic;\n        msg.errorPayload = err.payload;\n        return [null, msg];\n    }\n\n    flow.set(metaKey, undefined);\n    flow.set(completedKey, true);\n\n    setTimeout(() => {\n        flow.set(completedKey, undefined);\n    }, 5 * 60 * 1000);\n\n    const storedPath = `/signatures/${imageId}.png`;\n\n    msg.filename = storedPath;\n    msg.payload = buffer;\n    msg.ackTopic = `educacode/v1/devices/${deviceId}/images/${imageId}/ack`;\n    msg.ackPayload = JSON.stringify({\n        imageId,\n        status: 'completed',\n        sha256Verified: true,\n        storedPath\n    });\n\n    return [msg, null];\n}\n\nlet meta = flow.get(metaKey);\n\nif (meta) {\n    return validateAndPrepare(meta);\n}\n\nsetTimeout(() => {\n    const delayedMeta = flow.get(metaKey);\n\n    if (!delayedMeta) {\n        if (flow.get(completedKey)) {\n            return;\n        }\n        const err = buildError('meta_not_found');\n        node.send([null, { errorTopic: err.topic, errorPayload: err.payload }]);\n        return;\n    }\n\n    node.send(validateAndPrepare(delayedMeta));\n}, 2000);\n\nreturn null;",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 240,
+        "wires": [
+            ["file_write"],
+            ["change_prep_error"]
+        ]
+    },
+    {
+        "id": "file_write",
+        "type": "file",
+        "z": "flow_signature_receiver",
+        "name": "Write PNG",
+        "filename": "filename",
+        "filenameType": "msg",
+        "appendNewline": false,
+        "createDir": true,
+        "overwriteFile": "true",
+        "encoding": "none",
+        "x": 580,
+        "y": 200,
+        "wires": [
+            ["change_prep_ack"]
+        ]
+    },
+    {
+        "id": "change_prep_ack",
+        "type": "change",
+        "z": "flow_signature_receiver",
+        "name": "Prepare ACK",
+        "rules": [
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "ackTopic",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "ackPayload",
+                "tot": "msg"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 770,
+        "y": 200,
+        "wires": [
+            ["mqtt_out_ack"]
+        ]
+    },
+    {
+        "id": "mqtt_out_ack",
+        "type": "mqtt out",
+        "z": "flow_signature_receiver",
+        "name": "Publish ACK",
+        "topic": "",
+        "qos": "1",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "mqtt_broker_mosquitto",
+        "x": 970,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "change_prep_error",
+        "type": "change",
+        "z": "flow_signature_receiver",
+        "name": "Prepare Error",
+        "rules": [
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "errorTopic",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "errorPayload",
+                "tot": "msg"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 580,
+        "y": 300,
+        "wires": [
+            ["mqtt_out_error"]
+        ]
+    },
+    {
+        "id": "mqtt_out_error",
+        "type": "mqtt out",
+        "z": "flow_signature_receiver",
+        "name": "Publish Error",
+        "topic": "",
+        "qos": "1",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "mqtt_broker_mosquitto",
+        "x": 790,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "catch_file_error",
+        "type": "catch",
+        "z": "flow_signature_receiver",
+        "name": "Catch file error",
+        "scope": ["file_write"],
+        "uncaught": false,
+        "x": 590,
+        "y": 380,
+        "wires": [
+            ["fn_file_error_handler"]
+        ]
+    },
+    {
+        "id": "fn_file_error_handler",
+        "type": "function",
+        "z": "flow_signature_receiver",
+        "name": "Handle file error",
+        "func": "const parts = msg.topic.split('/');\nconst deviceId = parts[3];\nconst imageId = parts[5];\n\nmsg.errorTopic = `educacode/v1/devices/${deviceId}/images/${imageId}/error`;\nmsg.errorPayload = JSON.stringify({\n    imageId,\n    status: 'error',\n    reason: 'file_write_failed'\n});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 790,
+        "y": 380,
+        "wires": [
+            ["change_prep_error"]
+        ]
+    }
+]

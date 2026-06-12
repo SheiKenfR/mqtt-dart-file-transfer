@@ -42,6 +42,10 @@ build/
 **/android/gradlew.bat
 **/android/gradle/wrapper/gradle-wrapper.jar
 
+# Output
+signatures/*
+!signatures/.gitkeep
+
 # Misc
 *.log
 *.swp
