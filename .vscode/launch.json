@@ -5,12 +5,14 @@
             "name": "poc_sign",
             "request": "launch",
             "type": "dart",
+            "cwd": "${workspaceFolder}/front",
             "preLaunchTask": "detect-host-ip"
         },
         {
             "name": "poc_sign (profile mode)",
             "request": "launch",
             "type": "dart",
+            "cwd": "${workspaceFolder}/front",
             "flutterMode": "profile",
             "preLaunchTask": "detect-host-ip"
         },
@@ -18,6 +20,7 @@
             "name": "poc_sign (release mode)",
             "request": "launch",
             "type": "dart",
+            "cwd": "${workspaceFolder}/front",
             "flutterMode": "release",
             "preLaunchTask": "detect-host-ip"
         }

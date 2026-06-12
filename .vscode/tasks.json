@@ -4,7 +4,7 @@
         {
             "label": "detect-host-ip",
             "type": "shell",
-            "command": "${workspaceFolder}/scripts/detect_host_ip.sh",
+            "command": "${workspaceFolder}/front/scripts/detect_host_ip.sh",
             "presentation": {
                 "reveal": "silent",
                 "close": true
