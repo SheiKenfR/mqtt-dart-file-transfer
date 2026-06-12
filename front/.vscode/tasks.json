@@ -1,0 +1,14 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "detect-host-ip",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/detect_host_ip.sh",
+            "presentation": {
+                "reveal": "silent",
+                "close": true
+            }
+        }
+    ]
+}

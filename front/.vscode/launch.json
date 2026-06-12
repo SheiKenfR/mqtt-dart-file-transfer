@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "poc_sign",
+            "request": "launch",
+            "type": "dart",
+            "preLaunchTask": "detect-host-ip"
+        },
+        {
+            "name": "poc_sign (profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile",
+            "preLaunchTask": "detect-host-ip"
+        },
+        {
+            "name": "poc_sign (release mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release",
+            "preLaunchTask": "detect-host-ip"
+        }
+    ]
+}
